@@ -22,7 +22,7 @@ if not os.environ.get("OPENAI_KEY"):
 # Initializes your app with your bot token and socket mode handler
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
 
-openai = ChatOpenAI(model_name="gpt-3.5-turbo", openai_api_key="OPENAI_KEY")
+openai = ChatOpenAI(model_name="gpt-3.5-turbo")
 
 
 # Langchain implementation
