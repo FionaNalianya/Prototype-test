@@ -5,7 +5,7 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from langchain_openai import ChatOpenAI
 from langchain_core.runnables.base import RunnableSequence
-from langchain_core.prompts import PromptTemplate, SystemMessagePromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain.memory import ConversationBufferWindowMemory
 from langchain_core.messages import AIMessage
 import certifi
@@ -41,46 +41,12 @@ app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
 
 openai = ChatOpenAI(model_name="gpt-4", openai_api_key='OPENAI_KEY')
 
-# Langchain implementation
-# template = """Assistant is a large language model trained by OpenAI.
-
-#     Assistant is designed to be able to assist with a wide range of tasks, from answering simple questions to providing in-depth explanations and discussions on a wide range of topics. As a language model, Assistant is able to generate human-like text based on the input it receives, allowing it to engage in natural-sounding conversations and provide responses that are coherent and relevant to the topic at hand.
-
-#     Assistant is constantly learning and improving, and its capabilities are constantly evolving. It is able to process and understand large amounts of text, and can use this knowledge to provide accurate and informative responses to a wide range of questions. Additionally, Assistant is able to generate its own text based on the input it receives, allowing it to engage in discussions and provide explanations and descriptions on a wide range of topics.
-
-#     Overall, Assistant is a powerful tool that can help with a wide range of tasks and provide valuable insights and information on a wide range of topics. Whether you need help with a specific question or just want to have a conversation about a particular topic, Assistant is here to assist.
-
-#     {history}
-#     Human: {human_input}
-#     Assistant:"""
-
-# context = "\n".join(conversations)
-# major_topics = "\n".join(topics)
-
-# template = f"""
-# Here are some recent conversations from a Slack channel:
-# {context}
-
-# The major topics to consider are:
-# {major_topics}
-
-# Based on the above context, please assist with the following query:
-# """
-
-# prompt = PromptTemplate(
-#     input_variables=["history", "human_input"], 
-#     template=template
-# )
-
 # # Retrieve OpenAI API key from environment variables
 openai_api_key = os.environ.get("OPENAI_KEY")
 
 # # Message handler for Slack
 # # Initialize the memory
 memory = ConversationBufferWindowMemory(k=4)
-
-# # Create a runnable sequence (PromptTemplate and LLM)
-# sequence = prompt | openai
 
 # Dictionary to hold conversation history
 conversation_history = {}
@@ -92,7 +58,7 @@ def process_message(user, text):
     # Prepare input data
     context = "\n".join(conversation_history_channel)
     major_topics = "\n".join(topics)
-    input_data = {"history": history, "human_input": human_input, "major_topics": major_topics, "context": context, "res_data": res_data}
+    input_data = {"history": history, "human_input": human_input}
     template = f"""
     Assistant is designed to be able to assist with a wide range of tasks, from answering simple questions to providing in-depth explanations and discussions on a wide range of topics. 
     As a language model, Assistant is able to generate human-like text based on the input it receives, allowing it to engage in natural-sounding conversations and provide responses
@@ -107,43 +73,33 @@ def process_message(user, text):
     Assistant is adapted to work with FreeWorld organisation (https://freeworld.org/) whose background covers the major topics here:{major_topics}, and some internal information:{res_data}. you can give feedback based on any information on the 
     internet and any from their website. Also here is slack channel  history chat from some of the latest chats {context}
     {history}
-        Human: {human_input}
-        Assistant:
-        """
+    Human: {human_input}
+    Assistant:
+    """
 
+    # Create prompt template
     prompt = PromptTemplate(
         input_variables=["history", "human_input"], 
         template=template
     )
 
-    # Retrieve OpenAI API key from environment variables
-    # openai_api_key = os.environ.get("OPENAI_KEY")
-
-    # Message handler for Slack
-    # Initialize the memory
-    # memory = ConversationBufferWindowMemory(k=2)
-
     # Create a runnable sequence (PromptTemplate and LLM)
     sequence = prompt | openai
     
     # Generate response
-    response = sequence.invoke(input_data)
+    try:
+        response = sequence.invoke(input_data)
+        response_text = response.content if isinstance(response, AIMessage) else str(response)
 
-    # Extract text from AIMessage object
-    # response_text = response.content if isinstance(response, AIMessage) else str(AIMessage)
-    response_text = None
-    if isinstance(response, AIMessage):
-        print("succeful:\n",response)
-        response_text=response.content
-    else:
-        print("bad:\n",response)
-        response_text=str(response)
-
-    # Update the conversation history
-    new_history = f"{history}\nHuman: {text}\nAssistant: {response}"
-    conversation_history[user] = new_history
+        # Update the conversation history
+        new_history = f"{history}\nHuman: {text}\nAssistant: {response_text}"
+        conversation_history[user] = new_history
     
-    return response_text
+        return response_text
+    except Exception as e:
+        print(f"Error processing message: {e}")
+        return "Sorry, I encountered an error while processing your message. Please try again."
+
 
 def extract_messages(slack_data):
     messages = []
@@ -153,7 +109,7 @@ def extract_messages(slack_data):
     return messages
 
 @app.event("message")
-def message_handler(message,body, say, logger, event, client):
+def message_handler(body, say, event, logger, client):
     try:
         user = body['event']['user']
         text = body['event']['text']
@@ -164,10 +120,7 @@ def message_handler(message,body, say, logger, event, client):
         conversation_history_channel = result["messages"]
         # print(conversation_history_channel)
         conversations = extract_messages(conversation_history_channel)
-        conversation_history_channel = conversations[5]
-        # for msg in conversations:
-            # print(msg)
-        # # Print results
+        conversation_history_channel = conversations[-5:]
         # logger.info("{} messages found in {}".format(len(conversation_history_channel)))
         response = process_message(user, text)
         # Send response back to Slack
